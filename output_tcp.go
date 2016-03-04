@@ -28,40 +28,52 @@ func NewTCPOutput(address string) io.Writer {
 	o.buf = make(chan []byte, 100)
 	if Settings.outputTCPStats {
 		o.bufStats = NewGorStat("output_tcp")
+
 	}
 
 	for i := 0; i < 10; i++ {
 		go o.worker()
+
 	}
 
 	return o
+
 }
 
 func (o *TCPOutput) worker() {
+	Debug("Workers running...")
 	conn, err := o.connect(o.address)
 	for ; err != nil; conn, err = o.connect(o.address) {
 		time.Sleep(2 * time.Second)
+
 	}
 
 	defer conn.Close()
 
 	for {
+		Debug("Sending packet....")
 		conn.Write(<-o.buf)
+		Debug("post send")
 		_, err := conn.Write([]byte(payloadSeparator))
 
 		if err != nil {
 			log.Println("Worker failed on write, exitings and starting new worker")
 			go o.worker()
 			break
+
 		}
+
 	}
+
 }
 
 func (o *TCPOutput) Write(data []byte) (n int, err error) {
-	if !isOriginPayload(data) {
-		return len(data), nil
-	}
+	/*	if !isOriginPayload(data) {
+			Debug("isOriginPaylod=false")
+			return len(data), nil
 
+		}
+	*/
 	// We have to copy, because sending data in multiple threads
 	newBuf := make([]byte, len(data))
 	copy(newBuf, data)
@@ -71,8 +83,9 @@ func (o *TCPOutput) Write(data []byte) (n int, err error) {
 	if Settings.outputTCPStats {
 		o.bufStats.Write(len(o.buf))
 	}
-
+	Debug("OutputTCPwrite= ", newBuf)
 	return len(data), nil
+
 }
 
 func (o *TCPOutput) connect(address string) (conn net.Conn, err error) {
@@ -80,9 +93,11 @@ func (o *TCPOutput) connect(address string) (conn net.Conn, err error) {
 
 	if err != nil {
 		log.Println("Connection error ", err, o.address)
+
 	}
 
 	return
+
 }
 
 func (o *TCPOutput) String() string {

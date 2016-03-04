@@ -9,6 +9,7 @@ import (
 // Start initialize loop for sending data from inputs to outputs
 func Start(stop chan int) {
 	if Settings.middleware != "" {
+		//		Debug("Middleware active")
 		middleware := NewMiddleware(Settings.middleware)
 
 		for _, in := range Plugins.Inputs {
@@ -17,6 +18,7 @@ func Start(stop chan int) {
 
 		// We going only to read responses, so using same ReadFrom method
 		for _, out := range Plugins.Outputs {
+			//			Debug("Outputs: ", out)
 			if r, ok := out.(io.Reader); ok {
 				middleware.ReadFrom(r)
 			}
@@ -24,9 +26,14 @@ func Start(stop chan int) {
 
 		go CopyMulty(middleware, Plugins.Outputs...)
 	} else {
+		Debug("Middleware unable")
 		for _, in := range Plugins.Inputs {
+			//			Debug("Inputs: ", in)
 			go CopyMulty(in, Plugins.Outputs...)
 		}
+		//		for _, out := range Plugins.Outputs{
+		//			Debug("Outputs: ", out)
+		//		}
 	}
 
 	for {
@@ -49,19 +56,21 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 
 		if nr > 0 && len(buf) > nr {
 			payload := buf[:nr]
+			Debug("Buf: ", buf[:nr])
 
-			_maxN := nr
-			if nr > 500 {
-				_maxN = 500
-			}
+			//		_maxN := nr
+			//		if nr > 500 {
+			//			_maxN = 500
+			//		}
 
 			if Settings.debug {
-				Debug("[EMITTER] input:", string(payload[0:_maxN]), nr, "from:", src)
+				Debug("[EMITTER] input:", "|", payload, "|", nr, "from:", src)
 			}
 
 			if modifier != nil && isRequestPayload(payload) {
 				headSize := bytes.IndexByte(payload, '\n') + 1
 				body := payload[headSize:]
+				Debug("Body: ", body)
 				originalBodyLen := len(body)
 				body = modifier.Rewrite(body)
 
@@ -75,11 +84,12 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 				}
 
 				if Settings.debug {
-					Debug("[EMITTER] Rewrittern input:", len(payload), "First 500 bytes:", string(payload[0:_maxN]))
+					//					Debug("[EMITTER] Rewrittern input:", len(payload), "First 500 bytes:", string(payload[0:_maxN]))
 				}
 			}
 
 			if Settings.splitOutput {
+				//				Debug("Splitted")
 				// Simple round robin
 				writers[wIndex].Write(payload)
 
@@ -89,8 +99,11 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 					wIndex = 0
 				}
 			} else {
+				//				Debug("Normal")
 				for _, dst := range writers {
 					dst.Write(payload)
+					//					Debug("Dst: ", dst)
+					//					Debug("Payload: ", payload)
 				}
 			}
 

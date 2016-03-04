@@ -32,20 +32,25 @@ func NewRAWInput(address string, expire time.Duration) (i *RAWInput) {
 
 func (i *RAWInput) Read(data []byte) (int, error) {
 	msg := <-i.data
+	//	Debug("InputRaw-Msg: ", msg)
 	buf := msg.Bytes()
+	//	Debug("InputRaw-buf: ", buf)
 
-	var header []byte
+	/*var header []byte
 
 	if msg.IsIncoming {
 		header = payloadHeader(RequestPayload, msg.UUID(), msg.Start.UnixNano())
 	} else {
 		header = payloadHeader(ResponsePayload, msg.UUID(), msg.End.UnixNano()-msg.RequestStart.UnixNano())
 	}
+	*/
+	//	copy(data[0:len(header)], header)
+	copy(data, buf)
 
-	copy(data[0:len(header)], header)
-	copy(data[len(header):], buf)
+	//	Debug("InputRaw-PosCopyBuf= ", buf)
+	//	Debug("InutRaw-PosCopyHeader= ", header)
 
-	return len(buf) + len(header), nil
+	return /*len(header) +*/ len(buf), nil
 }
 
 func (i *RAWInput) listen(address string) {
