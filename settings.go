@@ -41,7 +41,8 @@ type AppSettings struct {
 	inputFile  MultiOption
 	outputFile MultiOption
 
-	inputRAW MultiOption
+	inputRAW    MultiOption
+	inputUDPRAW MultiOption
 
 	middleware string
 
@@ -81,6 +82,7 @@ func init() {
 	flag.Var(&Settings.outputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
 
 	flag.Var(&Settings.inputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
+	flag.Var(&Settings.inputUDPRAW, "input-udp-raw", "Capture traffic from given port (use RAW UDP sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-udp-raw :8080 --output-http staging.com")
 
 	flag.StringVar(&Settings.middleware, "middleware", "", "Used for modifying traffic using external command")
 

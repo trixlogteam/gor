@@ -83,6 +83,10 @@ func InitPlugins() {
 		registerPlugin(NewRAWInput, options, time.Duration(0))
 	}
 
+	for _, options := range Settings.inputUDPRAW {
+		registerPlugin(NewRAWUDPInput, options, time.Duration(0))
+	}
+
 	for _, options := range Settings.inputTCP {
 		registerPlugin(NewTCPInput, options)
 	}
