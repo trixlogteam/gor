@@ -37,6 +37,7 @@ func registerPlugin(constructor interface{}, options ...interface{}) {
 	// Pre-processing options to make it work with reflect
 	vo := []reflect.Value{}
 	for _, oi := range options {
+		Debug("RegisPlugin- ", oi)
 		vo = append(vo, reflect.ValueOf(oi))
 	}
 
@@ -66,6 +67,9 @@ func registerPlugin(constructor interface{}, options ...interface{}) {
 
 	if isW {
 		Plugins.Outputs = append(Plugins.Outputs, pluginWrapper.(io.Writer))
+		for _, out := range Plugins.Outputs {
+			Debug("RegisterPlugins-Outputs: ", out)
+		}
 	}
 }
 
@@ -91,7 +95,13 @@ func InitPlugins() {
 		registerPlugin(NewTCPInput, options)
 	}
 
+	for _, options := range Settings.outputUDP {
+		Debug("Setting.outputUDP", options)
+		registerPlugin(NewUDPOutput, options)
+	}
+
 	for _, options := range Settings.outputTCP {
+		Debug("Setting.outputTCP", options)
 		registerPlugin(NewTCPOutput, options)
 	}
 

@@ -31,9 +31,9 @@ func Start(stop chan int) {
 			//			Debug("Inputs: ", in)
 			go CopyMulty(in, Plugins.Outputs...)
 		}
-		//		for _, out := range Plugins.Outputs{
-		//			Debug("Outputs: ", out)
-		//		}
+		for _, out := range Plugins.Outputs {
+			Debug("Outputs: ", out)
+		}
 	}
 
 	for {
@@ -57,11 +57,6 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 		if nr > 0 && len(buf) > nr {
 			payload := buf[:nr]
 			Debug("Buf: ", buf[:nr])
-
-			//		_maxN := nr
-			//		if nr > 500 {
-			//			_maxN = 500
-			//		}
 
 			if Settings.debug {
 				Debug("[EMITTER] input:", "|", payload, "|", nr, "from:", src)

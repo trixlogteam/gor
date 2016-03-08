@@ -37,21 +37,11 @@ func (i *RAWUDPInput) Read(data []byte) (int, error) {
 	buf := <-i.data
 	Debug("InputRaw-buf: ", hex.EncodeToString(buf))
 	Debug("InputRaw-WithoutHeader ", hex.EncodeToString(buf[8:]))
-	/*var header []byte
 
-	if msg.IsIncoming {
-		header = payloadHeader(RequestPayload, msg.UUID(), msg.Start.UnixNano())
-	} else {
-		header = payloadHeader(ResponsePayload, msg.UUID(), msg.End.UnixNano()-msg.RequestStart.UnixNano())
-	}
-	*/
-	//	copy(data[0:len(header)], header)
+	//Offset 8 byte reserverd to header
 	copy(data, buf[8:])
 
-	//	Debug("InputRaw-PosCopyBuf= ", buf)
-	//	Debug("InutRaw-PosCopyHeader= ", header)
-
-	return /*len(header) +*/ len(buf), nil
+	return len(buf), nil
 }
 
 func listen(address string, i *RAWUDPInput) {

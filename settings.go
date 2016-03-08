@@ -37,6 +37,8 @@ type AppSettings struct {
 	inputTCP       MultiOption
 	outputTCP      MultiOption
 	outputTCPStats bool
+	outputUDP      MultiOption
+	outputUDPStats bool
 
 	inputFile  MultiOption
 	outputFile MultiOption
@@ -77,6 +79,9 @@ func init() {
 	flag.Var(&Settings.inputTCP, "input-tcp", "Used for internal communication between Gor instances. Example: \n\t# Receive requests from other Gor instances on 28020 port, and redirect output to staging\n\tgor --input-tcp :28020 --output-http staging.com")
 	flag.Var(&Settings.outputTCP, "output-tcp", "Used for internal communication between Gor instances. Example: \n\t# Listen for requests on 80 port and forward them to other Gor instance on 28020 port\n\tgor --input-raw :80 --output-tcp replay.local:28020")
 	flag.BoolVar(&Settings.outputTCPStats, "output-tcp-stats", false, "Report TCP output queue stats to console every 5 seconds.")
+
+	flag.Var(&Settings.outputUDP, "output-udp", "Used for transmittion UDP packets. Example: \n\t# Listen for requests on 80 port and forward UDP packets them to other instance on 28020 port\n\tgor --input-raw :80 --output-udp 192.168.1.2:28020")
+	flag.BoolVar(&Settings.outputUDPStats, "output-udp-stats", false, "Report UDP output queue stats to console every 5 seconds.")
 
 	flag.Var(&Settings.inputFile, "input-file", "Read requests from file: \n\tgor --input-file ./requests.gor --output-http staging.com")
 	flag.Var(&Settings.outputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
