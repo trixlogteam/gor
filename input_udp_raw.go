@@ -38,10 +38,13 @@ func (i *RAWUDPInput) Read(data []byte) (int, error) {
 	Debug("InputRaw-buf: ", hex.EncodeToString(buf))
 	Debug("InputRaw-WithoutHeader ", hex.EncodeToString(buf[8:]))
 
-	//Offset 8 byte reserverd to header
-	copy(data, buf[8:])
-
-	return len(buf), nil
+	//MobileID,MobileIDType=0x83=131
+	if (buf[8] == 131) && (len(buf) > 27) {
+		//Offset 8 byte reserverd to header
+		copy(data, buf[8:])
+		return len(buf), nil
+	}
+	return 0, nil
 }
 
 func listen(address string, i *RAWUDPInput) {
