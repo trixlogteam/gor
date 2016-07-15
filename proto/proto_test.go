@@ -16,6 +16,13 @@ func TestHeader(t *testing.T) {
 		t.Error("Should find header value")
 	}
 
+	// Value with space at end
+	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7 \r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
+		t.Error("Should find header value without space after 7")
+	}
+
 	// Value without space at start
 	payload = []byte("POST /post HTTP/1.1\r\nContent-Length:7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
 
@@ -37,10 +44,22 @@ func TestHeader(t *testing.T) {
 		t.Error("Should handle wrong header delimeter")
 	}
 
-
 	// Header not found
-	if _, headerStart, _, _ = header(payload, []byte("Not-Found")); headerStart != -1 {
+	if _, headerStart, _, _, _ = header(payload, []byte("Not-Found")); headerStart != -1 {
 		t.Error("Should not found header")
+	}
+
+	// Lower case headers
+	payload = []byte("POST /post HTTP/1.1\r\ncontent-length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
+		t.Error("Should find lower case 2 word header")
+	}
+
+	payload = []byte("POST /post HTTP/1.1\r\ncontent-length: 7\r\nhost: www.w3.org\r\n\r\na=1&b=2")
+
+	if val = Header(payload, []byte("host")); !bytes.Equal(val, []byte("www.w3.org")) {
+		t.Error("Should find lower case 1 word header")
 	}
 }
 
@@ -82,6 +101,25 @@ func TestSetHeader(t *testing.T) {
 
 	if payload = SetHeader(payload, []byte("User-Agent"), []byte("Gor")); !bytes.Equal(payload, payloadAfter) {
 		t.Error("Should add header if not found", string(payload))
+	}
+}
+
+func TestDeleteHeader(t *testing.T) {
+	var payload, payloadAfter []byte
+
+	payload = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if payload = DeleteHeader(payload, []byte("User-Agent")); !bytes.Equal(payload, payloadAfter) {
+		t.Error("Should delete header if found", string(payload), string(payloadAfter))
+	}
+
+	//Whitespace at end of User-Agent
+	payload = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor \r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if payload = DeleteHeader(payload, []byte("User-Agent")); !bytes.Equal(payload, payloadAfter) {
+		t.Error("Should delete header if found", string(payload), string(payloadAfter))
 	}
 }
 

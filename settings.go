@@ -25,14 +25,17 @@ func (h *MultiOption) Set(value string) error {
 
 // AppSettings is the struct of main configuration
 type AppSettings struct {
-	verbose bool
-	debug   bool
-	stats   bool
+	verbose   bool
+	debug     bool
+	stats     bool
+	exitAfter time.Duration
 
 	splitOutput bool
 
-	inputDummy  MultiOption
-	outputDummy MultiOption
+	inputDummy   MultiOption
+	outputDummy  MultiOption
+	outputStdout bool
+	outputNull   bool
 
 	inputTCP       MultiOption
 	outputTCP      MultiOption
@@ -40,11 +43,16 @@ type AppSettings struct {
 	outputUDP      MultiOption
 	outputUDPStats bool
 
-	inputFile  MultiOption
-	outputFile MultiOption
+	inputFile        MultiOption
+	inputFileLoop    bool
+	outputFile       MultiOption
+	outputFileConfig FileOutputConfig
 
-	inputRAW    MultiOption
-	inputUDPRAW MultiOption
+	inputRAW              MultiOption
+	inputUDPRAW           MultiOption
+	inputRAWEngine        string
+	inputRAWTrackResponse bool
+	inputRAWRealIPHeader  string
 
 	middleware string
 
@@ -70,11 +78,16 @@ func init() {
 	flag.BoolVar(&Settings.verbose, "verbose", false, "Turn on more verbose output")
 	flag.BoolVar(&Settings.debug, "debug", false, "Turn on debug output, shows all intercepted traffic. Works only when with `verbose` flag")
 	flag.BoolVar(&Settings.stats, "stats", false, "Turn on queue stats output")
+	flag.DurationVar(&Settings.exitAfter, "exit-after", 0, "exit after specified duration")
 
 	flag.BoolVar(&Settings.splitOutput, "split-output", false, "By default each output gets same traffic. If set to `true` it splits traffic equally among all outputs.")
 
 	flag.Var(&Settings.inputDummy, "input-dummy", "Used for testing outputs. Emits 'Get /' request every 1s")
-	flag.Var(&Settings.outputDummy, "output-dummy", "Used for testing inputs. Just prints data coming from inputs.")
+	flag.Var(&Settings.outputDummy, "output-dummy", "DEPRECATED: use --output-stdout instead")
+
+	flag.BoolVar(&Settings.outputStdout, "output-stdout", false, "Used for testing inputs. Just prints to console data coming from inputs.")
+
+	flag.BoolVar(&Settings.outputNull, "output-null", false, "Used for testing inputs. Drops all requests.")
 
 	flag.Var(&Settings.inputTCP, "input-tcp", "Used for internal communication between Gor instances. Example: \n\t# Receive requests from other Gor instances on 28020 port, and redirect output to staging\n\tgor --input-tcp :28020 --output-http staging.com")
 	flag.Var(&Settings.outputTCP, "output-tcp", "Used for internal communication between Gor instances. Example: \n\t# Listen for requests on 80 port and forward them to other Gor instance on 28020 port\n\tgor --input-raw :80 --output-tcp replay.local:28020")
@@ -84,22 +97,39 @@ func init() {
 	flag.BoolVar(&Settings.outputUDPStats, "output-udp-stats", false, "Report UDP output queue stats to console every 5 seconds.")
 
 	flag.Var(&Settings.inputFile, "input-file", "Read requests from file: \n\tgor --input-file ./requests.gor --output-http staging.com")
+	flag.BoolVar(&Settings.inputFileLoop, "input-file-loop", false, "Loop input files, useful for performance testing.")
+
 	flag.Var(&Settings.outputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
+	flag.DurationVar(&Settings.outputFileConfig.flushInterval, "output-file-flush-interval", time.Minute, "Interval for forcing buffer flush to the file, default: 60s.")
+	flag.BoolVar(&Settings.outputFileConfig.append, "output-file-append", false, "The flushed chunk is appended to existence file or not. ")
+
+	// Set default
+	Settings.outputFileConfig.sizeLimit.Set("32mb")
+	flag.Var(&Settings.outputFileConfig.sizeLimit, "output-file-size-limit", "Size of each chunk. Default: 32mb")
+	flag.IntVar(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
 
 	flag.Var(&Settings.inputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
 	flag.Var(&Settings.inputUDPRAW, "input-udp-raw", "Capture traffic from given port (use RAW UDP sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-udp-raw :8080 --output-http staging.com")
+
+	flag.BoolVar(&Settings.inputRAWTrackResponse, "input-raw-track-response", false, "If turned on Gor will track responses in addition to requests, and they will be available to middleware and file output.")
+
+	flag.StringVar(&Settings.inputRAWEngine, "input-raw-engine", "libpcap", "Intercept traffic using `libpcap` (default), and `raw_socket`")
+
+	flag.StringVar(&Settings.inputRAWRealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
 
 	flag.StringVar(&Settings.middleware, "middleware", "", "Used for modifying traffic using external command")
 
 	flag.Var(&Settings.inputHTTP, "input-http", "Read requests from HTTP, should be explicitly sent from your application:\n\t# Listen for http on 9000\n\tgor --input-http :9000 --output-http staging.com")
 
 	flag.Var(&Settings.outputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
+	flag.IntVar(&Settings.outputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
 	flag.IntVar(&Settings.outputHTTPConfig.workers, "output-http-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
 	flag.IntVar(&Settings.outputHTTPConfig.redirectLimit, "output-http-redirects", 0, "Enable how often redirects should be followed.")
 	flag.DurationVar(&Settings.outputHTTPConfig.Timeout, "output-http-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-http-timeout 30s")
 
 	flag.BoolVar(&Settings.outputHTTPConfig.stats, "output-http-stats", false, "Report http output queue stats to console every 5 seconds.")
 	flag.BoolVar(&Settings.outputHTTPConfig.OriginalHost, "http-original-host", false, "Normally gor replaces the Host http header with the host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
+	flag.BoolVar(&Settings.outputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
 
 	flag.StringVar(&Settings.outputHTTPConfig.elasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
 

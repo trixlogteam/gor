@@ -39,8 +39,9 @@ func Start(stop chan int) {
 	for {
 		select {
 		case <-stop:
+			finalize()
 			return
-		case <-time.After(time.Second):
+		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }

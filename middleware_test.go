@@ -116,7 +116,8 @@ func TestEchoMiddleware(t *testing.T) {
 	Settings.middleware = "./examples/middleware/echo.sh"
 
 	// Catch traffic from one service
-	input := NewRAWInput(from.Listener.Addr().String(), testRawExpire)
+	fromAddr := strings.Replace(from.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
+	input := NewRAWInput(fromAddr, EnginePcap, true, testRawExpire, "")
 	defer input.Close()
 
 	// And redirect to another
@@ -128,7 +129,8 @@ func TestEchoMiddleware(t *testing.T) {
 	// Start Gor
 	go Start(quit)
 
-	time.Sleep(time.Millisecond)
+	// Wait till middleware initialization
+	time.Sleep(100 * time.Millisecond)
 
 	// Should receive 2 requests from original + 2 from replayed
 	client := NewHTTPClient(from.URL, &HTTPClientConfig{Debug: false})
@@ -137,7 +139,9 @@ func TestEchoMiddleware(t *testing.T) {
 		wg.Add(4)
 		// Request should be echoed
 		client.Get("/a")
+		time.Sleep(5 * time.Millisecond)
 		client.Get("/b")
+		time.Sleep(5 * time.Millisecond)
 	}
 
 	wg.Wait()
@@ -175,7 +179,7 @@ func TestTokenMiddleware(t *testing.T) {
 
 	fromAddr := strings.Replace(from.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
 	// Catch traffic from one service
-	input := NewRAWInput(fromAddr, testRawExpire)
+	input := NewRAWInput(fromAddr, EnginePcap, true, testRawExpire, "")
 	defer input.Close()
 
 	// And redirect to another
@@ -194,15 +198,15 @@ func TestTokenMiddleware(t *testing.T) {
 	// Should receive 2 requests from original + 2 from replayed
 	wg.Add(4)
 
-	client := NewHTTPClient(from.URL, &HTTPClientConfig{Debug: false})
+	client := NewHTTPClient(from.URL, &HTTPClientConfig{Debug: true})
 
 	// Sending traffic to original service
 	resp, _ = client.Get("/token")
 	token = proto.Body(resp)
 
 	// When delay is too smal, middleware does not always rewrite requests in time
-	// Hopefuly client will have delay more then 10ms :)
-	time.Sleep(10 * time.Millisecond)
+	// Hopefuly client will have delay more then 100ms :)
+	time.Sleep(100 * time.Millisecond)
 
 	resp, _ = client.Get("/secure?token=" + string(token))
 	if !bytes.Equal(proto.Status(resp), []byte("202")) {

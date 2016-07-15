@@ -11,4 +11,9 @@
 
 *.test
 .idea
+*.iml
 gor
+
+*.mprof
+
+*.pcap

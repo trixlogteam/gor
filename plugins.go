@@ -4,6 +4,7 @@ import (
 	"io"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -11,7 +12,10 @@ import (
 type InOutPlugins struct {
 	Inputs  []io.Reader
 	Outputs []io.Writer
+	All     []interface{}
 }
+
+var pluginMu sync.Mutex
 
 // Plugins holds all the plugin objects
 var Plugins *InOutPlugins = new(InOutPlugins)
@@ -32,6 +36,7 @@ func extractLimitOptions(options string) (string, string) {
 //
 // See this article if curious about relfect stuff below: http://blog.burntsushi.net/type-parametric-functions-golang
 func registerPlugin(constructor interface{}, options ...interface{}) {
+	var path, limit string
 	vc := reflect.ValueOf(constructor)
 
 	// Pre-processing options to make it work with reflect
@@ -41,11 +46,13 @@ func registerPlugin(constructor interface{}, options ...interface{}) {
 		vo = append(vo, reflect.ValueOf(oi))
 	}
 
-	// Removing limit options from path
-	path, limit := extractLimitOptions(vo[0].String())
+	if len(vo) > 0 {
+		// Removing limit options from path
+		path, limit = extractLimitOptions(vo[0].String())
 
-	// Writing value back without limiter "|" options
-	vo[0] = reflect.ValueOf(path)
+		// Writing value back without limiter "|" options
+		vo[0] = reflect.ValueOf(path)
+	}
 
 	// Calling our constructor with list of given options
 	plugin := vc.Call(vo)[0].Interface()
@@ -71,20 +78,40 @@ func registerPlugin(constructor interface{}, options ...interface{}) {
 			Debug("RegisterPlugins-Outputs: ", out)
 		}
 	}
+
+	Plugins.All = append(Plugins.All, plugin)
 }
 
 // InitPlugins specify and initialize all available plugins
 func InitPlugins() {
+	pluginMu.Lock()
+	defer pluginMu.Unlock()
+
 	for _, options := range Settings.inputDummy {
 		registerPlugin(NewDummyInput, options)
 	}
 
-	for _, options := range Settings.outputDummy {
-		registerPlugin(NewDummyOutput, options)
+	for range Settings.outputDummy {
+		registerPlugin(NewDummyOutput)
+	}
+
+	if Settings.outputStdout {
+		registerPlugin(NewDummyOutput)
+	}
+
+	if Settings.outputNull {
+		registerPlugin(NewNullOutput)
+	}
+
+	engine := EnginePcap
+	if Settings.inputRAWEngine == "raw_socket" {
+		engine = EngineRawSocket
+	} else if Settings.inputRAWEngine == "pcap_file" {
+		engine = EnginePcapFile
 	}
 
 	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options, time.Duration(0))
+		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, time.Duration(0), Settings.inputRAWRealIPHeader)
 	}
 
 	for _, options := range Settings.inputUDPRAW {
@@ -106,11 +133,11 @@ func InitPlugins() {
 	}
 
 	for _, options := range Settings.inputFile {
-		registerPlugin(NewFileInput, options)
+		registerPlugin(NewFileInput, options, Settings.inputFileLoop)
 	}
 
 	for _, options := range Settings.outputFile {
-		registerPlugin(NewFileOutput, options)
+		registerPlugin(NewFileOutput, options, &Settings.outputFileConfig)
 	}
 
 	for _, options := range Settings.inputHTTP {

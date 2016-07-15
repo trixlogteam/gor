@@ -22,7 +22,7 @@ func NewTestInput() (i *TestInput) {
 func (i *TestInput) Read(data []byte) (int, error) {
 	buf := <-i.data
 
-	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano())
+	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
 	copy(data[0:len(header)], header)
 	copy(data[len(header):], buf)
 
@@ -53,6 +53,18 @@ func (i *TestInput) EmitLargePOST() {
 	rs := base64.URLEncoding.EncodeToString(rb)
 
 	i.data <- []byte("POST / HTTP/1.1\nHost: www.w3.org\nContent-Length:5242880\r\n\r\n" + rs)
+	Debug("Sent large POST")
+}
+
+// EmitSizedPOST emit a POST with a payload set to a supplied size
+func (i *TestInput) EmitSizedPOST(payloadSize int) {
+	rb := make([]byte, payloadSize)
+	rand.Read(rb)
+
+	rs := base64.URLEncoding.EncodeToString(rb)
+
+	i.data <- []byte("POST / HTTP/1.1\nHost: www.w3.org\nContent-Length:5242880\r\n\r\n" + rs)
+	Debug("Sent large POST")
 }
 
 // EmitOPTIONS emits OPTIONS request, similar to GET

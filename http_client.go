@@ -1,16 +1,30 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
-	"github.com/buger/gor/proto"
 	"io"
 	"log"
 	"net"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
+
+	"github.com/buger/gor/proto"
 )
+
+var httpMu sync.Mutex
+
+const (
+	readChunkSize   = 64 * 1024
+	maxResponseSize = 1073741824
+)
+
+var chunkedSuffix = []byte("0\r\n\r\n")
 
 var defaultPorts = map[string]string{
 	"http":  "80",
@@ -51,6 +65,8 @@ func NewHTTPClient(baseURL string, config *HTTPClientConfig) *HTTPClient {
 	if config.Timeout.Nanoseconds() == 0 {
 		config.Timeout = 5 * time.Second
 	}
+
+	config.ConnectionTimeout = config.Timeout
 
 	if config.ResponseBufferSize == 0 {
 		config.ResponseBufferSize = 100 * 1024 // 100kb
@@ -101,7 +117,17 @@ func (c *HTTPClient) isAlive() bool {
 
 	// Ready 1 byte from socket without timeout to check if it not closed
 	c.conn.SetReadDeadline(time.Now().Add(time.Millisecond))
-	if _, err := c.conn.Read(one); err == io.EOF {
+	_, err := c.conn.Read(one)
+
+	if err == nil {
+		return true
+	} else if err == io.EOF {
+		if c.config.Debug {
+			Debug("[HTTPClient] connection closed, reconnecting")
+		}
+		return false
+	} else if err == syscall.EPIPE {
+		Debug("Detected broken pipe.", err)
 		return false
 	}
 
@@ -148,26 +174,121 @@ func (c *HTTPClient) Send(data []byte) (response []byte, err error) {
 		return
 	}
 
-	c.conn.SetReadDeadline(timeout)
-	n, err := c.conn.Read(c.respBuf)
+	var readBytes, n int
+	var currentChunk []byte
+	timeout = time.Now().Add(c.config.Timeout)
+	chunked := false
+	contentLength := -1
+	currentContentLength := 0
+	chunks := 0
 
-	// If response large then our buffer, we need to read all response buffer
-	// Otherwise it will corrupt response of next request
-	// Parsing response body is non trivial thing, especially with keep-alive
-	// Simples case is to to close connection if response too large
-	//
-	// See https://github.com/buger/gor/issues/184
-	if n == len(c.respBuf) {
-		c.Disconnect()
+	for {
+		c.conn.SetReadDeadline(timeout)
+
+		if readBytes < len(c.respBuf) {
+			n, err = c.conn.Read(c.respBuf[readBytes:])
+			readBytes += n
+			chunks++
+
+			if err != nil {
+				if err == io.EOF {
+					err = nil
+				}
+				break
+			}
+
+			// First chunk
+			if chunked || contentLength != -1 {
+				currentContentLength += n
+			} else {
+				// If headers are finished
+				if bytes.Contains(c.respBuf[:readBytes], proto.EmptyLine) {
+					if bytes.Equal(proto.Header(c.respBuf, []byte("Transfer-Encoding")), []byte("chunked")) {
+						chunked = true
+					} else {
+						l := proto.Header(c.respBuf, []byte("Content-Length"))
+						if len(l) > 0 {
+							contentLength, _ = strconv.Atoi(string(l))
+						}
+					}
+
+					currentContentLength += len(proto.Body(c.respBuf[:readBytes]))
+				}
+			}
+
+			if chunked {
+				// Check if chunked message finished
+				if bytes.HasSuffix(c.respBuf[:readBytes], chunkedSuffix) {
+					break
+				}
+			} else if contentLength != -1 {
+				if currentContentLength > contentLength {
+					Debug("[HTTPClient] disconnected, wrong length", currentContentLength, contentLength)
+					c.Disconnect()
+					break
+				} else if currentContentLength == contentLength {
+					break
+				}
+			}
+		} else {
+			if currentChunk == nil {
+				currentChunk = make([]byte, readChunkSize)
+			}
+
+			n, err = c.conn.Read(currentChunk)
+
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				Debug("[HTTPClient] Read the whole body error:", err, c.baseURL)
+				break
+			}
+
+			readBytes += int(n)
+			chunks++
+			currentContentLength += n
+
+			if chunked {
+				// Check if chunked message finished
+				if bytes.HasSuffix(currentChunk[:n], chunkedSuffix) {
+					break
+				}
+			} else if contentLength != -1 {
+				if currentContentLength > contentLength {
+					Debug("[HTTPClient] disconnected, wrong length", currentContentLength, contentLength)
+					c.Disconnect()
+					break
+				} else if currentContentLength == contentLength {
+					break
+				}
+			} else {
+				Debug("[HTTPClient] disconnected, can't find Content-Length or Chunked")
+				c.Disconnect()
+				break
+			}
+		}
+
+		if readBytes >= maxResponseSize {
+			Debug("[HTTPClient] Body is more than the max size", maxResponseSize,
+				c.baseURL)
+			break
+		}
+
+		// For following chunks expect less timeout
+		timeout = time.Now().Add(c.config.Timeout / 5)
 	}
 
 	if err != nil {
-		Debug("[HTTPClient] Response read error", err, c.conn)
+		Debug("[HTTPClient] Response read error", err, c.conn, readBytes)
 		response = errorPayload(HTTP_TIMEOUT)
 		return
 	}
 
-	payload := c.respBuf[:n]
+	if readBytes > len(c.respBuf) {
+		readBytes = len(c.respBuf)
+	}
+	payload := make([]byte, readBytes)
+	copy(payload, c.respBuf[:readBytes])
 
 	if c.config.Debug {
 		Debug("[HTTPClient] Received:", string(payload))
@@ -198,6 +319,14 @@ func (c *HTTPClient) Send(data []byte) (response []byte, err error) {
 
 func (c *HTTPClient) Get(path string) (response []byte, err error) {
 	payload := "GET " + path + " HTTP/1.1\r\n\r\n"
+
+	return c.Send([]byte(payload))
+}
+
+func (c *HTTPClient) Post(path string, body []byte) (response []byte, err error) {
+	payload := "POST " + path + " HTTP/1.1\r\n"
+	payload += "Content-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
+	payload += string(body)
 
 	return c.Send([]byte(payload))
 }

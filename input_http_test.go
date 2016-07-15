@@ -15,7 +15,7 @@ func TestHTTPInput(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
-	input := NewHTTPInput(":0")
+	input := NewHTTPInput("127.0.0.1:0")
 	output := NewTestOutput(func(data []byte) {
 		wg.Done()
 	})
@@ -41,14 +41,13 @@ func TestInputHTTPLargePayload(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
-	// Generate 1000kb file
-	dd := exec.Command("dd", "if=/dev/urandom", "of=/tmp/large", "bs=1MB", "count=4")
+	dd := exec.Command("dd", "if=/dev/urandom", "of=/tmp/large", "bs=1", "count=4000000")
 	err := dd.Run()
 	if err != nil {
 		log.Fatal("dd error:", err)
 	}
 
-	input := NewHTTPInput(":0")
+	input := NewHTTPInput("127.0.0.1:0")
 	output := NewTestOutput(func(data []byte) {
 		if len(proto.Body(payloadBody(data))) != 4000000 {
 			t.Error("Should receive full file")
